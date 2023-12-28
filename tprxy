@@ -1,0 +1,123 @@
+#!/usr/bin/perl
+
+use strict;
+use autodie;
+use warnings;
+use feature 'say';
+
+use Getopt::Long;
+use IO::Socket::IP qw(SOCK_STREAM);
+use IO::Poll       qw(POLLIN POLLOUT);
+
+my %peer_map;
+
+sub usage {
+    say "tprxy -- A quick port forwarding utility.";
+    say "\t-l {listen_addr}  -- the address to listen on.";
+    say "\t-f {forward_addr} -- the address to forward to.";
+    say "examples:";
+    say "\tproxy -l :3000 -f app.local:8080";
+    say "\tproxy -l 10.0.1.10:3000 -f [::1]:80";
+    say "\tproxy -l localhost:3000 -f google.com:http";
+    exit 1;
+}
+
+sub do_accept {
+    my $poll     = shift;
+    my $listener = shift;
+    my @peerInfo = shift;
+    my $client   = $listener->accept();
+
+    my $peer = IO::Socket::IP->new(
+        Blocking     => 0,
+        PeerAddrInfo => @peerInfo,
+    );
+
+    $peer_map{$peer}   = $client;
+    $peer_map{$client} = $peer;
+
+    $poll->mask( $peer => POLLOUT );
+}
+
+sub do_rmsock {
+    my $poll   = shift;
+    my $handle = shift;
+
+    $poll->remove($handle);
+    $handle->close();
+}
+
+sub do_close {
+    my $poll   = shift;
+    my $handle = shift;
+    my $peer   = $peer_map{$handle};
+
+    do_rmsock( $poll, $handle );
+    do_rmsock( $poll, $peer );
+}
+
+sub do_proxy {
+    my $buf;
+    my $poll   = shift;
+    my $handle = shift;
+
+    $handle->sysread( $buf, 4096 );
+
+    if ( not $buf ) {
+        do_close( $poll, $handle, %peer_map );
+        return;
+    }
+
+    $peer_map{$handle}->syswrite($buf);
+}
+
+sub main {
+
+    my %options;
+
+    GetOptions( \%options, 'l=s', 'f=s' ) || usage;
+    usage unless defined $options{l} and defined $options{f};
+
+    my %hints = ( socktype => SOCK_STREAM );
+    my ( $fhost, $fport )    = IO::Socket::IP->split_addr( $options{f} );
+    my ( $err,   @peerInfo ) = Socket::getaddrinfo( $fhost, $fport, \%hints );
+
+    if ($err) {
+        die "$err: $options{f}";
+    }
+
+    my $poll     = IO::Poll->new();
+    my $listener = IO::Socket::IP->new(
+        ReuseAddr => 1,
+        Listen    => 4096,
+        LocalHost => $options{l},
+        Type      => SOCK_STREAM,
+    ) || die "$!: $options{l}";
+
+    say "listening on " . $listener->sockhostname . ':' . $listener->sockport;
+
+    $poll->mask( $listener => POLLIN );
+
+    while (1) {
+        $poll->poll();
+
+        for my $handle ( $poll->handles(POLLIN) ) {
+            if ( $handle == $listener ) {
+                do_accept( $poll, $listener, \@peerInfo );
+            }
+            else {
+                next unless exists $peer_map{$handle};
+                do_proxy( $poll, $handle );
+            }
+        }
+
+        for my $handle ( $poll->handles(POLLOUT) ) {
+
+            $poll->mask( $handle            => POLLIN );
+            $poll->mask( $peer_map{$handle} => POLLIN )
+              unless $handle == $listener;
+        }
+    }
+}
+
+main();
