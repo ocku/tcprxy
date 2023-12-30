@@ -10,5 +10,5 @@ EXAMPLES
         proxy -l localhost:3000 -f google.com:http
 
 WHY
-        It's fun to reinvent the wheel. Also, I get to
-        write a nice 60 column plaintext README for it.
+        It's fun to reinvent the wheel. Also, I get to write a nice 80 column 
+        plaintext README for it.

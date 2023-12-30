@@ -43,17 +43,9 @@ sub do_rmsock {
     my $poll   = shift;
     my $handle = shift;
 
+    delete $peer_map{$handle};
     $poll->remove($handle);
     $handle->close();
-}
-
-sub do_close {
-    my $poll   = shift;
-    my $handle = shift;
-    my $peer   = $peer_map{$handle};
-
-    do_rmsock( $poll, $handle );
-    do_rmsock( $poll, $peer );
 }
 
 sub do_proxy {
@@ -64,7 +56,8 @@ sub do_proxy {
     $handle->sysread( $buf, 4096 );
 
     if ( not $buf ) {
-        do_close( $poll, $handle, %peer_map );
+        do_rmsock( $poll, $handle );
+        do_rmsock( $poll, %peer_map{$handle} );
         return;
     }
 
@@ -74,7 +67,6 @@ sub do_proxy {
 sub main {
 
     my %options;
-
     GetOptions( \%options, 'l=s', 'f=s' ) || usage;
     usage unless defined $options{l} and defined $options{f};
 
@@ -96,6 +88,7 @@ sub main {
 
     say "listening on " . $listener->sockhostname . ':' . $listener->sockport;
 
+    $listener->blocking(0);
     $poll->mask( $listener => POLLIN );
 
     while (1) {
@@ -112,7 +105,6 @@ sub main {
         }
 
         for my $handle ( $poll->handles(POLLOUT) ) {
-
             $poll->mask( $handle            => POLLIN );
             $poll->mask( $peer_map{$handle} => POLLIN )
               unless $handle == $listener;
