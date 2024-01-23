@@ -12,13 +12,13 @@ use IO::Poll       qw(POLLIN POLLOUT);
 my %peer_map;
 
 sub usage {
-    say "tprxy -- A quick port forwarding utility.";
+    say "tcprxy -- A quick port forwarding utility.";
     say "\t-l {listen_addr}  -- the address to listen on.";
     say "\t-f {forward_addr} -- the address to forward to.";
     say "examples:";
-    say "\tproxy -l :3000 -f app.local:8080";
-    say "\tproxy -l 10.0.1.10:3000 -f [::1]:80";
-    say "\tproxy -l localhost:3000 -f google.com:http";
+    say "\ttcprxy -l :3000 -f app.local:8080";
+    say "\ttcprxy -l 10.0.1.10:3000 -f [::1]:80";
+    say "\ttcprxy -l localhost:3000 -f google.com:http";
     exit 1;
 }
 
